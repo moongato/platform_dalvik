@@ -23,8 +23,13 @@
 #include <selinux/android.h>
 
 #include <signal.h>
+#if (__GNUC__ == 4 && __GNUC_MINOR__ == 7)
+#include <sys/resource.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
+#include <stdio.h>
 #include <grp.h>
 #include <errno.h>
 #include <paths.h>
@@ -283,6 +288,28 @@ static int mountEmulatedStorage(uid_t uid, u4 mountMode) {
             return -1;
         }
 
+        // Unfortunately bind mounts from outside ANDROID_STORAGE retain the
+        // recursive-shared property (kernel bug?).  This means any additional bind
+        // mounts (e.g., /storage/emulated/0/Android/obb) will also appear, shared
+        // in all namespaces, at their respective source paths (e.g.,
+        // /mnt/shell/emulated/0/Android/obb), leading to hundreds of
+        // /proc/mounts-visible bind mounts.  As a workaround, mark
+        // EMULATED_STORAGE_SOURCE (e.g., /mnt/shell/emulated) also a slave so that
+        // subsequent bind mounts are confined to this namespace.  Note,
+        // EMULATED_STORAGE_SOURCE must already serve as a mountpoint, which it
+        // should for the "sdcard" fuse volume.
+        if (mount(NULL, source, NULL, (MS_SLAVE | MS_REC), NULL) == -1) {
+            SLOGW("Failed to mount %s as MS_SLAVE: %s", source, strerror(errno));
+
+            // Fallback: Mark rootfs as slave.  All mounts under "/" will be hidden
+            // from other apps and users.  This shouldn't happen unless the sdcard
+            // service is broken.
+            if (mount("rootfs", "/", NULL, (MS_SLAVE | MS_REC), NULL) == -1) {
+                SLOGE("Failed to mount rootfs as MS_SLAVE: %s", strerror(errno));
+                return -1;
+            }
+        }
+
         if (mountMode == MOUNT_EXTERNAL_MULTIUSER_ALL) {
             // Mount entire external storage tree for all users
             if (mount(source, target, NULL, MS_BIND, NULL) == -1) {
@@ -483,6 +510,64 @@ static bool needsNoRandomizeWorkaround() {
 }
 
 /*
+ * Basic KSM Support
+ */
+#ifndef MADV_MERGEABLE
+#define MADV_MERGEABLE 12
+#endif
+
+static inline void pushAnonymousPagesToKSM(void)
+{
+    FILE *fp;
+    char section[100];
+    char perms[5];
+    unsigned long start, end, misc;
+    int ch, offset;
+
+    fp = fopen("/proc/self/maps","r");
+
+    if (fp != NULL) {
+        while (fscanf(fp, "%lx-%lx %4s %lx %lx:%lx %ld",
+                 &start, &end, perms, &misc, &misc, &misc, &misc) == 7)
+        {
+            /* Read the sections name striping any preceeding spaces
+               and truncating to 100char (99 + \0)*/
+            section[0] = 0;
+            offset = 0;
+            while(1)
+            {
+                ch = fgetc(fp);
+                if (ch == '\n' || ch == EOF) {
+                    break;
+                }
+                if ((offset == 0) && (ch == ' ')) {
+                    continue;
+                }
+                if ((offset + 1) < 100) {
+                    section[offset]=ch;
+                    section[offset+1]=0;
+                    offset++;
+                }
+            }
+            /* now decide if we want to scan the section or not:
+               for now we scan Anonymous (sections with no file name) stack and
+               heap sections*/
+            if (( section[0] == 0) ||
+               (strcmp(section,"[stack]") == 0) ||
+               (strcmp(section,"[heap]") == 0))
+            {
+                /* The section matches pass it into madvise */
+                madvise((void*) start, (size_t) end-start, MADV_MERGEABLE);
+            }
+            if (ch == EOF) {
+                break;
+            }
+        }
+        fclose(fp);
+    }
+}
+
+/*
  * Utility routine to fork zygote and specialize the child process.
  */
 static pid_t forkAndSpecializeCommon(const u4* args, bool isSystemServer)
@@ -670,6 +755,7 @@ static pid_t forkAndSpecializeCommon(const u4* args, bool isSystemServer)
             ALOGE("error in post-zygote initialization");
             dvmAbort();
         }
+        pushAnonymousPagesToKSM();
     } else if (pid > 0) {
         /* the parent process */
         free(seInfo);

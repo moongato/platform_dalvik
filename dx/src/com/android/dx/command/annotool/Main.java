@@ -18,6 +18,7 @@ package com.android.dx.command.annotool;
 
 import java.lang.annotation.ElementType;
 import java.util.EnumSet;
+import java.util.Arrays;
 import java.util.Locale;
 
 public class Main {
