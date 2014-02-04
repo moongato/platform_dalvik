@@ -316,6 +316,7 @@ typedef enum ArmConditionCode {
  * Assemble.c.
  */
 typedef enum ArmOpcode {
+    kArmPseudoPCReconstructionCellExtended = -19,       /* pcReconstruction for extended MIR*/
     kArmChainingCellBottom = -18,
     kArmPseudoBarrier = -17,
     kArmPseudoExtended = -16,
@@ -432,6 +433,8 @@ typedef enum ArmOpcode {
                                     rd[15-12] [10100000] rm[3..0] */
     kThumb2Vdivd,        /* vdiv vd, vn, vm [111011101000] rn[19..16]
                                     rd[15-12] [10110000] rm[3..0] */
+    kThumb2VmlaF64,      /* vmla.F64 vd, vn, vm [111011100000] vn[19..16]
+                                     vd[15..12] [10110000] vm[3..0] */
     kThumb2VcvtIF,       /* vcvt.F32 vd, vm [1110111010111000] vd[15..12]
                                     [10101100] vm[3..0] */
     kThumb2VcvtID,       /* vcvt.F64 vd, vm [1110111010111000] vd[15..12]
@@ -444,6 +447,10 @@ typedef enum ArmOpcode {
                                        [10101100] vm[3..0] */
     kThumb2VcvtDF,       /* vcvt.F32.F64 vd, vm [1110111010110111] vd[15..12]
                                        [10111100] vm[3..0] */
+    kThumb2VcvtF64S32,   /* vcvt.F64.S32 vd, vm [1110111010111000] vd[15..12]
+                                       [10111100] vm[3..0] */
+    kThumb2VcvtF64U32,   /* vcvt.F64.U32 vd, vm [1110111010111000] vd[15..12]
+                                       [10110100] vm[3..0] */
     kThumb2Vsqrts,       /* vsqrt.f32 vd, vm [1110111010110001] vd[15..12]
                                        [10101100] vm[3..0] */
     kThumb2Vsqrtd,       /* vsqrt.f64 vd, vm [1110111010110001] vd[15..12]
@@ -536,7 +543,7 @@ typedef enum ArmOpcode {
                                    [0000] rm[3..0] */
     kThumb2MulRRR,       /* mul [111110110000] rn[19..16] [1111] rd[11..8]
                                    [0000] rm[3..0] */
-    kThumb2MnvRR,        /* mvn [11101010011011110] rd[11-8] [0000]
+    kThumb2MvnRR,        /* mvn [11101010011011110] rd[11-8] [0000]
                                    rm[3..0] */
     kThumb2RsubRRI8,     /* rsub [111100011100] rn[19..16] [0000] rd[11..8]
                                    imm8[7..0] */
@@ -676,6 +683,8 @@ typedef enum ArmOpFeatureFlags {
     kUsesCCodes,
     kMemLoad,
     kMemStore,
+    kSetsFPStatus,
+    kUsesFPStatus,
 } ArmOpFeatureFlags;
 
 #define IS_LOAD         (1 << kMemLoad)
@@ -703,6 +712,8 @@ typedef enum ArmOpFeatureFlags {
 #define IS_IT           (1 << kIsIT)
 #define SETS_CCODES     (1 << kSetsCCodes)
 #define USES_CCODES     (1 << kUsesCCodes)
+#define SETS_FPSTATUS   (1 << kSetsFPStatus)
+#define USES_FPSTATUS   (1 << kUsesFPStatus)
 
 /* Common combo register usage patterns */
 #define REG_USE01       (REG_USE0 | REG_USE1)
@@ -753,6 +764,7 @@ typedef enum ArmTargetOptHints {
 } ArmTargetOptHints;
 
 extern ArmEncodingMap EncodingMap[kArmLast];
+extern ArmEncodingMap* getEncoding(ArmOpcode opcode);
 
 /*
  * Each instance of this struct holds a pseudo or real LIR instruction:
@@ -782,6 +794,7 @@ typedef struct ArmLIR {
     int aliasInfo;              // For Dalvik register & litpool disambiguation
     u8 useMask;                 // Resource mask for use
     u8 defMask;                 // Resource mask for def
+    u4* extraData;
 } ArmLIR;
 
 /* Init values when a predicted chain is initially assembled */

@@ -219,11 +219,11 @@ static int analyzeInlineTarget(DecodedInstruction *dalvikInsn, int attributes,
     }
 
     if (!(flags & kInstrCanReturn)) {
-        if (!(dvmCompilerDataFlowAttributes[dalvikOpcode] &
+        if (!(dvmGetDexOptAttributes(dalvikInsn) &
               DF_IS_GETTER)) {
             attributes &= ~METHOD_IS_GETTER;
         }
-        if (!(dvmCompilerDataFlowAttributes[dalvikOpcode] &
+        if (!(dvmGetDexOptAttributes(dalvikInsn) &
               DF_IS_SETTER)) {
             attributes &= ~METHOD_IS_SETTER;
         }
@@ -1355,6 +1355,41 @@ bool dvmCompileMethod(const Method *method, JitTranslationInfo *info)
     return false;
 }
 
+/*
+ * Utility funtion to check the DEX opcode for correctness
+ */
+__attribute__((weak)) bool dvmVerifyDex(CompilationUnit *cUnit, BasicBlock *curBlock,
+                                        const u2* codePtr, MIR *insn)
+{
+    bool result = false;
+    if (insn) {
+        if ((insn->dalvikInsn.opcode >= OP_NOP) &&
+            (insn->dalvikInsn.opcode < OP_UNUSED_FF)) {
+            result = true;
+        }
+    }
+    return result;
+}
+
+/* dump simple trace property */
+__attribute__((weak)) void dvmDumpLoopTraceStats(CompilationUnit *cUnit)
+{
+    if(cUnit->printMe){
+        ALOGV("hasInvoke %d",cUnit->hasInvoke);
+    }
+}
+
+/* dump reglocation info of a loop trace */
+__attribute__((weak)) void dvmCompilerDumpRegLocationInfo(CompilationUnit *cUnit)
+{
+    if(cUnit->printMe){
+        int i;
+        for (i=0; i< cUnit->numSSARegs; i++) {
+            ALOGV("LOC %d:%d",i,cUnit->regLocation[i].sRegLow);
+        }
+    }
+}
+
 /* Extending the trace by crawling the code from curBlock */
 static bool exhaustTrace(CompilationUnit *cUnit, BasicBlock *curBlock)
 {
@@ -1392,6 +1427,7 @@ static bool exhaustTrace(CompilationUnit *cUnit, BasicBlock *curBlock)
         if (width == 0)
             break;
 
+        dvmVerifyDex(cUnit, curBlock, codePtr + width, insn);
         dvmCompilerAppendMIR(curBlock, insn);
 
         codePtr += width;
@@ -1464,11 +1500,15 @@ static bool compileLoop(CompilationUnit *cUnit, unsigned int startOffset,
 
     cUnit->jitMode = kJitLoop;
 
+    /* reset number of insns in the trace */
+    cUnit->numInsts=0;
+
     /* Initialize the block list */
     dvmInitGrowableList(&cUnit->blockList, 4);
 
     /* Initialize the PC reconstruction list */
     dvmInitGrowableList(&cUnit->pcReconstructionList, 8);
+    dvmInitGrowableList(&cUnit->pcReconstructionListExtended, 1);
 
     /* Create the default entry and exit blocks and enter them to the list */
     BasicBlock *entryBlock = dvmCompilerNewBB(kEntryBlock, numBlocks++);
@@ -1530,6 +1570,8 @@ static bool compileLoop(CompilationUnit *cUnit, unsigned int startOffset,
     if (!dvmCompilerBuildLoop(cUnit))
         goto bail;
 
+    dvmDumpLoopTraceStats(cUnit);
+
     dvmCompilerLoopOpt(cUnit);
 
     /*
@@ -1546,6 +1588,8 @@ static bool compileLoop(CompilationUnit *cUnit, unsigned int startOffset,
 
     /* Allocate Registers using simple local allocation scheme */
     dvmCompilerLocalRegAlloc(cUnit);
+
+    dvmCompilerDumpRegLocationInfo(cUnit);
 
     /* Convert MIR to LIR, etc. */
     dvmCompilerMIR2LIR(cUnit);
@@ -1579,16 +1623,23 @@ static bool compileLoop(CompilationUnit *cUnit, unsigned int startOffset,
         dvmCompilerCodegenDump(cUnit);
     }
 
-    /*
-     * If this trace uses class objects as constants,
-     * dvmJitInstallClassObjectPointers will switch the thread state
-     * to running and look up the class pointers using the descriptor/loader
-     * tuple stored in the callsite info structure. We need to make this window
-     * as short as possible since it is blocking GC.
-     */
-    if (cUnit->hasClassLiterals && info->codeAddress) {
-        dvmJitInstallClassObjectPointers(cUnit, (char *) info->codeAddress);
+    dvmLockMutex(&gDvmJit.compilerLock);
+    if (info->cacheVersion == gDvmJit.cacheVersion) {
+        /*
+         * If this trace uses class objects as constants,
+         * dvmJitInstallClassObjectPointers will switch the thread state
+         * to running and look up the class pointers using the descriptor/loader
+         * tuple stored in the callsite info structure. We need to make this window
+         * as short as possible since it is blocking GC.
+         */
+        if (cUnit->hasClassLiterals && info->codeAddress) {
+           dvmJitInstallClassObjectPointers(cUnit, (char *) info->codeAddress);
+        }
+    } else {
+        ALOGD("JIT CC reset. New version: %d / trace version: %d",
+              gDvmJit.cacheVersion, info->cacheVersion);
     }
+    dvmUnlockMutex(&gDvmJit.compilerLock);
 
     /*
      * Since callsiteinfo is allocated from the arena, delay the reset until
@@ -1693,6 +1744,7 @@ bool dvmCompileTrace(JitTraceDescription *desc, int numMaxInsts,
     /* Initialize the PC reconstruction list */
     dvmInitGrowableList(&cUnit.pcReconstructionList, 8);
 
+    dvmInitGrowableList(&cUnit.pcReconstructionListExtended, 1);
     /* Initialize the basic block list */
     blockList = &cUnit.blockList;
     dvmInitGrowableList(blockList, 8);
@@ -1800,6 +1852,7 @@ bool dvmCompileTrace(JitTraceDescription *desc, int numMaxInsts,
     curBB = dvmCompilerNewBB(kEntryBlock, numBlocks++);
     dvmInsertGrowableList(blockList, (intptr_t) curBB);
     curBB->startOffset = curOffset;
+    cUnit.entryBlock = curBB;
 
     entryCodeBB = dvmCompilerNewBB(kDalvikByteCode, numBlocks++);
     dvmInsertGrowableList(blockList, (intptr_t) entryCodeBB);
@@ -1826,9 +1879,12 @@ bool dvmCompileTrace(JitTraceDescription *desc, int numMaxInsts,
         /* The trace should never incude instruction data */
         assert(width);
         insn->width = width;
+
+        dvmVerifyDex(&cUnit, curBB, codePtr + width, insn);
         traceSize += width;
         dvmCompilerAppendMIR(curBB, insn);
-        cUnit.numInsts++;
+        /* assign seqNum to each insn in the trace */
+        insn->seqNum = cUnit.numInsts++;
 
         int flags = dexGetFlagsFromOpcode(insn->dalvikInsn.opcode);
 
@@ -2151,16 +2207,23 @@ bool dvmCompileTrace(JitTraceDescription *desc, int numMaxInsts,
                                optHints);
     }
 
-    /*
-     * If this trace uses class objects as constants,
-     * dvmJitInstallClassObjectPointers will switch the thread state
-     * to running and look up the class pointers using the descriptor/loader
-     * tuple stored in the callsite info structure. We need to make this window
-     * as short as possible since it is blocking GC.
-     */
-    if (cUnit.hasClassLiterals && info->codeAddress) {
-        dvmJitInstallClassObjectPointers(&cUnit, (char *) info->codeAddress);
+    dvmLockMutex(&gDvmJit.compilerLock);
+    if (info->cacheVersion == gDvmJit.cacheVersion) {
+        /*
+         * If this trace uses class objects as constants,
+         * dvmJitInstallClassObjectPointers will switch the thread state
+         * to running and look up the class pointers using the descriptor/loader
+         * tuple stored in the callsite info structure. We need to make this window
+         * as short as possible since it is blocking GC.
+         */
+        if (cUnit.hasClassLiterals && info->codeAddress) {
+            dvmJitInstallClassObjectPointers(&cUnit, (char *) info->codeAddress);
+        }
+    } else {
+        ALOGD("JIT CC reset. New version: %d / trace version: %d",
+              gDvmJit.cacheVersion, info->cacheVersion);
     }
+    dvmUnlockMutex(&gDvmJit.compilerLock);
 
     /*
      * Since callsiteinfo is allocated from the arena, delay the reset until

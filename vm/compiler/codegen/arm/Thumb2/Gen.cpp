@@ -124,13 +124,15 @@ static void genMulLong(CompilationUnit *cUnit, RegLocation rlDest,
 
 static void genLong3Addr(CompilationUnit *cUnit, MIR *mir, OpKind firstOp,
                          OpKind secondOp, RegLocation rlDest,
-                         RegLocation rlSrc1, RegLocation rlSrc2)
+                         RegLocation rlSrc1, RegLocation rlSrc2, bool setCCode)
 {
     RegLocation rlResult;
     rlSrc1 = loadValueWide(cUnit, rlSrc1, kCoreReg);
     rlSrc2 = loadValueWide(cUnit, rlSrc2, kCoreReg);
     rlResult = dvmCompilerEvalLoc(cUnit, rlDest, kCoreReg, true);
+    if(setCCode) SET_CCODE;
     opRegRegReg(cUnit, firstOp, rlResult.lowReg, rlSrc1.lowReg, rlSrc2.lowReg);
+    if(setCCode) UNSET_CCODE;
     opRegRegReg(cUnit, secondOp, rlResult.highReg, rlSrc1.highReg,
                 rlSrc2.highReg);
     storeValueWide(cUnit, rlDest, rlResult);
@@ -351,6 +353,13 @@ static void genMonitor(CompilationUnit *cUnit, MIR *mir)
         genMonitorExit(cUnit, mir);
 }
 
+__attribute__((weak)) bool genCmpLongThumb2(CompilationUnit *cUnit, MIR *mir,
+                                    RegLocation rlDest, RegLocation rlSrc1,
+                                    RegLocation rlSrc2)
+{
+    return false;
+}
+
 /*
  * 64-bit 3way compare function.
  *     mov   r7, #-1
@@ -370,6 +379,9 @@ static void genCmpLong(CompilationUnit *cUnit, MIR *mir,
                        RegLocation rlDest, RegLocation rlSrc1,
                        RegLocation rlSrc2)
 {
+    if(genCmpLongThumb2(cUnit, mir, rlDest, rlSrc1, rlSrc2))
+        return;
+
     RegLocation rlTemp = LOC_C_RETURN; // Just using as template, will change
     ArmLIR *target1;
     ArmLIR *target2;
@@ -380,7 +392,9 @@ static void genCmpLong(CompilationUnit *cUnit, MIR *mir,
     opRegReg(cUnit, kOpCmp, rlSrc1.highReg, rlSrc2.highReg);
     ArmLIR *branch1 = opCondBranch(cUnit, kArmCondLt);
     ArmLIR *branch2 = opCondBranch(cUnit, kArmCondGt);
+    SET_CCODE;
     opRegRegReg(cUnit, kOpSub, rlTemp.lowReg, rlSrc1.lowReg, rlSrc2.lowReg);
+    UNSET_CCODE;
     ArmLIR *branch3 = opCondBranch(cUnit, kArmCondEq);
 
     genIT(cUnit, kArmCondHi, "E");

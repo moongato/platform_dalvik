@@ -108,6 +108,30 @@ static bool genArithOpDouble(CompilationUnit *cUnit, MIR *mir,
     return false;
 }
 
+static bool genConversionL2D(CompilationUnit *cUnit, MIR *mir)
+{
+    int srcReg, tmp1, tmp2;
+    RegLocation rlSrc;
+    RegLocation rlDest;
+    RegLocation rlResult;
+
+    rlSrc = dvmCompilerGetSrcWide(cUnit, mir, 0, 1);
+    rlSrc = loadValueWide(cUnit, rlSrc, kFPReg);
+    srcReg = S2D(rlSrc.lowReg, rlSrc.highReg);
+    rlDest = dvmCompilerGetDestWide(cUnit, mir, 0, 1);
+    rlResult = dvmCompilerEvalLoc(cUnit, rlDest, kFPReg, true);
+    tmp1 = dvmCompilerAllocTypedTempPair(cUnit, true, kFPReg);
+    tmp2 = dvmCompilerAllocTypedTempPair(cUnit, true, kFPReg);
+    newLIR2(cUnit, (ArmOpcode)kThumb2VcvtF64S32, tmp1, ((srcReg & 0xff)+1));
+    newLIR2(cUnit, (ArmOpcode)kThumb2VcvtF64U32, S2D(rlResult.lowReg, rlResult.highReg),
+            (srcReg & 0xff));
+    loadConstantValueWide(cUnit, (tmp2 & 0xff), ((tmp2 >> 8) & 0xff), 0x0, 0x41f00000);
+    newLIR3(cUnit, (ArmOpcode)kThumb2VmlaF64, S2D(rlResult.lowReg, rlResult.highReg),
+                    tmp1, tmp2);
+    storeValueWide(cUnit, rlDest, rlResult);
+    return false;
+}
+
 static bool genConversion(CompilationUnit *cUnit, MIR *mir)
 {
     Opcode opcode = mir->dalvikInsn.opcode;
@@ -151,6 +175,7 @@ static bool genConversion(CompilationUnit *cUnit, MIR *mir)
             op = kThumb2VcvtDI;
             break;
         case OP_LONG_TO_DOUBLE:
+            return genConversionL2D(cUnit, mir);
         case OP_FLOAT_TO_LONG:
         case OP_LONG_TO_FLOAT:
         case OP_DOUBLE_TO_LONG:
@@ -208,12 +233,21 @@ static bool genInlineSqrt(CompilationUnit *cUnit, MIR *mir)
     return false;
 }
 
+__attribute__((weak)) bool genCmpFPThumb2(CompilationUnit *cUnit, MIR *mir, RegLocation rlDest,
+                                    RegLocation rlSrc1, RegLocation rlSrc2)
+{
+    return true;
+}
+
 static bool genCmpFP(CompilationUnit *cUnit, MIR *mir, RegLocation rlDest,
                      RegLocation rlSrc1, RegLocation rlSrc2)
 {
     bool isDouble;
     int defaultResult;
     RegLocation rlResult;
+
+    if(!genCmpFPThumb2(cUnit, mir, rlDest, rlSrc1, rlSrc2))
+        return false;
 
     switch(mir->dalvikInsn.opcode) {
         case OP_CMPL_FLOAT:
