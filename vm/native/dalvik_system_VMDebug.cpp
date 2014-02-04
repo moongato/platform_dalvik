@@ -244,7 +244,7 @@ static void Dalvik_dalvik_system_VMDebug_startMethodTracingDdmsImpl(const u4* ar
 
 /*
  * static void startMethodTracingFd(String traceFileName, FileDescriptor fd,
- *     int bufferSize, int flags, boolean samplingEnabled, int intervalUs)
+ *     int bufferSize, int flags)
  *
  * Start method trace profiling, sending results to a file descriptor.
  */
@@ -255,8 +255,6 @@ static void Dalvik_dalvik_system_VMDebug_startMethodTracingFd(const u4* args,
     Object* traceFd = (Object*) args[1];
     int bufferSize = args[2];
     int flags = args[3];
-    bool samplingEnabled = args[4];
-    int intervalUs = args[5];
 
     int origFd = getFileDescriptor(traceFd);
     if (origFd < 0)
@@ -274,15 +272,14 @@ static void Dalvik_dalvik_system_VMDebug_startMethodTracingFd(const u4* args,
         RETURN_VOID();
     }
 
-    dvmMethodTraceStart(traceFileName, fd, bufferSize, flags, false,
-        samplingEnabled, intervalUs);
+    dvmMethodTraceStart(traceFileName, fd, bufferSize, flags, false, false, 0);
     free(traceFileName);
     RETURN_VOID();
 }
 
 /*
  * static void startMethodTracingFilename(String traceFileName, int bufferSize,
- *     int flags, boolean samplingEnabled, int intervalUs)
+ *     int flags)
  *
  * Start method trace profiling, sending results to a file.
  */
@@ -292,16 +289,13 @@ static void Dalvik_dalvik_system_VMDebug_startMethodTracingFilename(const u4* ar
     StringObject* traceFileStr = (StringObject*) args[0];
     int bufferSize = args[1];
     int flags = args[2];
-    bool samplingEnabled = args[3];
-    int intervalUs = args[4];
 
     char* traceFileName = dvmCreateCstrFromString(traceFileStr);
     if (traceFileName == NULL) {
         RETURN_VOID();
     }
 
-    dvmMethodTraceStart(traceFileName, -1, bufferSize, flags, false,
-        samplingEnabled, intervalUs);
+    dvmMethodTraceStart(traceFileName, -1, bufferSize, flags, false, false, 0);
     free(traceFileName);
     RETURN_VOID();
 }
@@ -829,9 +823,9 @@ const DalvikNativeMethod dvm_dalvik_system_VMDebug[] = {
         Dalvik_dalvik_system_VMDebug_stopAllocCounting },
     { "startMethodTracingDdmsImpl", "(IIZI)V",
         Dalvik_dalvik_system_VMDebug_startMethodTracingDdmsImpl },
-    { "startMethodTracingFd",       "(Ljava/lang/String;Ljava/io/FileDescriptor;IIZI)V",
+    { "startMethodTracingFd",       "(Ljava/lang/String;Ljava/io/FileDescriptor;II)V",
         Dalvik_dalvik_system_VMDebug_startMethodTracingFd },
-    { "startMethodTracingFilename", "(Ljava/lang/String;IIZI)V",
+    { "startMethodTracingFilename", "(Ljava/lang/String;II)V",
         Dalvik_dalvik_system_VMDebug_startMethodTracingFilename },
     { "getMethodTracingMode",       "()I",
         Dalvik_dalvik_system_VMDebug_getMethodTracingMode },

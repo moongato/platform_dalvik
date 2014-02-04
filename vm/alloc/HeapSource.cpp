@@ -19,6 +19,8 @@
 #include <errno.h>
 #include <cutils/ashmem.h>
 
+#define SIZE_MAX UINT_MAX  // TODO: get SIZE_MAX from stdint.h
+
 #include "Dalvik.h"
 #include "alloc/DlMalloc.h"
 #include "alloc/Heap.h"
@@ -33,17 +35,7 @@ static void setIdealFootprint(size_t max);
 static size_t getMaximumSize(const HeapSource *hs);
 static void trimHeaps();
 
-#ifdef DALVIK_LOWMEM
-static const bool lowmem = true;
-#else
-static const bool lowmem = false;
-#endif
-
 #define HEAP_UTILIZATION_MAX        1024
-#define DEFAULT_HEAP_UTILIZATION    512     // Range 1..HEAP_UTILIZATION_MAX
-#define HEAP_IDEAL_FREE_DEFAULT     (2 * 1024 * 1024)
-static unsigned int heapIdeaFree = HEAP_IDEAL_FREE_DEFAULT;
-#define HEAP_MIN_FREE               ((heapIdeaFree) / 4)
 
 /* How long to wait after a GC before performing a heap trim
  * operation to reclaim unused pages.
@@ -467,6 +459,7 @@ static bool addNewHeap(HeapSource *hs)
     if (!remapNewHeap(hs, &heap)) {
       return false;
     }
+    heap.msp = createMspace(base, morecoreStart, hs->minFree);
     if (heap.msp == NULL) {
         return false;
     }

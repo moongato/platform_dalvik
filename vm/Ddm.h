@@ -19,9 +19,6 @@
 #ifndef DALVIK_DDM_H_
 #define DALVIK_DDM_H_
 
-#include <stdbool.h>
-#include "Thread.h"
-
 /*
  * Handle a packet full of DDM goodness.
  *

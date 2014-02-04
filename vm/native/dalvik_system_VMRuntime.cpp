@@ -136,11 +136,11 @@ static void Dalvik_dalvik_system_VMRuntime_newNonMovableArray(const u4* args,
 
     if (elementClass == NULL) {
         dvmThrowNullPointerException("elementClass == null");
-        RETURN_PTR(NULL);
+        RETURN_VOID();
     }
     if (length < 0) {
         dvmThrowNegativeArraySizeException(length);
-        RETURN_PTR(NULL);
+        RETURN_VOID();
     }
 
     // TODO: right now, we don't have a copying collector, so there's no need
@@ -152,7 +152,7 @@ static void Dalvik_dalvik_system_VMRuntime_newNonMovableArray(const u4* args,
                                                  ALLOC_NON_MOVING);
     if (newArray == NULL) {
         assert(dvmCheckException(dvmThreadSelf()));
-        RETURN_PTR(NULL);
+        RETURN_VOID();
     }
     dvmReleaseTrackedAlloc((Object*) newArray, NULL);
 

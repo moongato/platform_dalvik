@@ -17,6 +17,7 @@
 /*
  * Dalvik initialization, shutdown, and command-line argument processing.
  */
+#define __STDC_LIMIT_MACROS
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
@@ -79,9 +80,8 @@ int gDvmICHitCount;
  *
  * We follow the tradition of unhyphenated compound words.
  */
-static void usage()
+static void usage(const char* progName)
 {
-    const char* progName = "dalvikvm";
     dvmFprintf(stderr, "%s: [options] class [argument ...]\n", progName);
     dvmFprintf(stderr, "%s: [options] -jar file.jar [argument ...]\n",progName);
     dvmFprintf(stderr, "\n");
@@ -804,8 +804,7 @@ static int processOptions(int argc, const char* const argv[],
     for (i = 0; i < argc; i++) {
         if (strcmp(argv[i], "-help") == 0) {
             /* show usage and stop */
-            usage();
-            exit(0);
+            return -1;
 
         } else if (strcmp(argv[i], "-version") == 0) {
             /* show version and stop */
@@ -1375,13 +1374,6 @@ private:
 };
 
 /*
- * Hook for post-init functions
- */
-__attribute__((weak)) void dvmPostInitZygote(void) {
-    ;
-}
-
-/*
  * VM initialization.  Pass in any options provided on the command line.
  * Do not pass in the class name or the options for the class.
  *
@@ -1407,7 +1399,7 @@ std::string dvmStartup(int argc, const char* const argv[],
     if (cc != 0) {
         if (cc < 0) {
             dvmFprintf(stderr, "\n");
-            usage();
+            usage("dalvikvm");
         }
         return "syntax error";
     }
@@ -1580,7 +1572,6 @@ std::string dvmStartup(int argc, const char* const argv[],
         if (!initZygote()) {
             return "initZygote failed";
         }
-        dvmPostInitZygote();
     } else {
         if (!dvmInitAfterZygote()) {
             return "dvmInitAfterZygote failed";

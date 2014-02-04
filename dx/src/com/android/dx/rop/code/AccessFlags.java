@@ -231,28 +231,6 @@ public final class AccessFlags {
     }
 
     /**
-     * Returns whether the flag {@code ACC_CONSTRUCTOR} is on in
-     * the given flags.
-     *
-     * @param flags the flags to check
-     * @return the value of the {@code ACC_CONSTRUCTOR} flag
-     */
-    public static boolean isConstructor(int flags) {
-        return (flags & ACC_CONSTRUCTOR) != 0;
-    }
-
-    /**
-     * Returns whether the flag {@code ACC_INTERFACE} is on in
-     * the given flags.
-     *
-     * @param flags the flags to check
-     * @return the value of the {@code ACC_INTERFACE} flag
-     */
-    public static boolean isInterface(int flags) {
-        return (flags & ACC_INTERFACE) != 0;
-    }
-
-    /**
      * Returns whether the flag {@code ACC_SYNCHRONIZED} is on in
      * the given flags.
      *
@@ -305,16 +283,6 @@ public final class AccessFlags {
      */
     public static boolean isDeclaredSynchronized(int flags) {
         return (flags & ACC_DECLARED_SYNCHRONIZED) != 0;
-    }
-
-    /**
-     * Returns whether the flag {@code ACC_ENUM} is on in the given flags.
-     *
-     * @param flags the flags to check
-     * @return the value of the {@code ACC_ENUM} flag
-     */
-    public static boolean isEnum(int flags) {
-        return (flags & ACC_ENUM) != 0;
     }
 
     /**
