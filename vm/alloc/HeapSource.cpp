@@ -42,7 +42,6 @@ static const bool lowmem = false;
 #endif
 
 #define HEAP_UTILIZATION_MAX        1024
-#define DEFAULT_HEAP_UTILIZATION    512     // Range 1..HEAP_UTILIZATION_MAX
 #define HEAP_IDEAL_FREE_DEFAULT     (2 * 1024 * 1024)
 static unsigned int heapIdeaFree = HEAP_IDEAL_FREE_DEFAULT;
 #define HEAP_MIN_FREE               ((heapIdeaFree) / 4)
@@ -484,6 +483,7 @@ static bool addNewHeap(HeapSource *hs)
         }
         heap.msp = createMspace(base, morecoreStart, hs->minFree);
     }
+
     if (heap.msp == NULL) {
         return false;
     }
